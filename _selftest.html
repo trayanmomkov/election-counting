@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="UTF-8">
+<title>Selftest</title>
+<style>
+body { font-family: monospace; padding: 20px; line-height: 1.5; }
+.pass { color: green; }
+.fail { color: red; font-weight: bold; }
+iframe { display: block; width: 500px; height: 800px; border: 1px solid #ccc; margin-top: 20px; }
+</style>
+</head>
+<body>
+<h1>Self-test</h1>
+<pre id="log"></pre>
+<iframe id="app" src="./index.html"></iframe>
+<script type="module">
+import { PARTIES, PREF_MIN, PREF_MAX } from './parties.js';
+
+const log = document.getElementById('log');
+const iframe = document.getElementById('app');
+const results = [];
+
+function pass(name) { results.push(`<span class="pass">PASS</span> ${name}`); }
+function fail(name, d='') { results.push(`<span class="fail">FAIL</span> ${name} ${d}`); }
+function assert(name, cond, d='') { cond ? pass(name) : fail(name, d); }
+function render() { log.innerHTML = results.join('\n'); }
+
+// --- Phase 1: data tests ---
+assert('PARTIES has 25 entries', PARTIES.length === 25, `got ${PARTIES.length}`);
+assert('Party 1 is "Има такъв народ"', PARTIES[0].short === 'Има такъв народ');
+assert('Party 25 is "Не подкрепям никого"', PARTIES[24].short === 'Не подкрепям никого');
+assert('Party 25 has no prefs', PARTIES[24].hasPrefs === false);
+assert('Parties 1-24 have prefs', PARTIES.slice(0, 24).every(p => p.hasPrefs));
+assert('PREF_MIN is 101', PREF_MIN === 101);
+assert('PREF_MAX is 138', PREF_MAX === 138);
+
+// --- Phase 2: integration tests ---
+iframe.addEventListener('load', async () => {
+  try {
+    const win = iframe.contentWindow;
+    const doc = iframe.contentDocument;
+
+    // Clean localStorage for test
+    win.localStorage.removeItem('broene-izbori-v1');
+    // Note: would need reload to re-init state
+
+    // Wait for initial render
+    await new Promise(r => setTimeout(r, 100));
+
+    const grid = doc.getElementById('parties-grid');
+    assert('parties-grid exists', !!grid);
+    assert('25 cards rendered', grid.querySelectorAll('.party-card').length === 25, `got ${grid.querySelectorAll('.party-card').length}`);
+
+    // Test: click party 5 opens modal
+    const card5 = doc.querySelector('.party-card[data-party="5"]');
+    assert('card #5 exists', !!card5);
+    card5.click();
+    await new Promise(r => setTimeout(r, 100));
+    const modal = doc.getElementById('pref-modal');
+    assert('modal opens on party click', modal.open === true);
+
+    const circles = doc.querySelectorAll('.pref-circle');
+    assert('38 pref circles rendered', circles.length === 38, `got ${circles.length}`);
+
+    // Click preference 103 (index 2)
+    const pref103 = Array.from(circles).find(c => c.dataset.pref === '103');
+    assert('pref 103 exists', !!pref103);
+    pref103.click();
+    await new Promise(r => setTimeout(r, 250)); // wait past debounce
+
+    assert('modal closed after vote', modal.open === false);
+    const count5 = doc.querySelector('.party-card[data-party="5"] .party-count');
+    assert('party 5 count = 1', count5.textContent === '1', `got "${count5.textContent}"`);
+    assert('total count = 1', doc.getElementById('total-count').textContent === '1');
+
+    // Test: party 25 (no prefs) direct increment - wait past debounce
+    await new Promise(r => setTimeout(r, 250));
+    const card25 = doc.querySelector('.party-card[data-party="25"]');
+    card25.click();
+    await new Promise(r => setTimeout(r, 250));
+    assert('modal does not open for party 25', modal.open === false);
+    const count25 = doc.querySelector('.party-card[data-party="25"] .party-count');
+    assert('party 25 count = 1', count25.textContent === '1', `got "${count25.textContent}"`);
+
+    // Test: invalid
+    await new Promise(r => setTimeout(r, 250));
+    doc.getElementById('btn-invalid').click();
+    await new Promise(r => setTimeout(r, 250));
+    assert('invalid count = 1', doc.getElementById('invalid-count').textContent === '1');
+    assert('total = 3 after invalid', doc.getElementById('total-count').textContent === '3');
+
+    // Test: undo
+    await new Promise(r => setTimeout(r, 50));
+    doc.getElementById('btn-undo').click();
+    await new Promise(r => setTimeout(r, 150));
+    assert('undo: invalid back to 0', doc.getElementById('invalid-count').textContent === '0');
+    assert('undo: total = 2', doc.getElementById('total-count').textContent === '2');
+
+    doc.getElementById('btn-undo').click();
+    await new Promise(r => setTimeout(r, 150));
+    assert('undo: party 25 back to 0', doc.querySelector('.party-card[data-party="25"] .party-count').textContent === '0');
+
+    doc.getElementById('btn-undo').click();
+    await new Promise(r => setTimeout(r, 150));
+    assert('undo: party 5 back to 0', doc.querySelector('.party-card[data-party="5"] .party-count').textContent === '0');
+
+    assert('undo disabled when history empty', doc.getElementById('btn-undo').disabled === true);
+
+    // --- Phase 3: long-press + correction tests ---
+    // Set up some votes first via direct call
+    await new Promise(r => setTimeout(r, 250));
+    doc.querySelector('.party-card[data-party="3"]').click();
+    await new Promise(r => setTimeout(r, 50));
+    // Click a preference (103)
+    const pref103b = Array.from(doc.querySelectorAll('.pref-circle')).find(c => c.dataset.pref === '103');
+    pref103b.click();
+    await new Promise(r => setTimeout(r, 250));
+
+    // Simulate long-press on party 3 by dispatching pointer events
+    const card3 = doc.querySelector('.party-card[data-party="3"]');
+    const pdown = new win.PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 50, clientY: 50, pointerType: 'touch' });
+    card3.dispatchEvent(pdown);
+    await new Promise(r => setTimeout(r, 600)); // wait for long-press
+    const pup = new win.PointerEvent('pointerup', { bubbles: true, button: 0, clientX: 50, clientY: 50, pointerType: 'touch' });
+    card3.dispatchEvent(pup);
+    await new Promise(r => setTimeout(r, 100));
+
+    const corrModal = doc.getElementById('correction-modal');
+    assert('correction modal opens on long-press', corrModal.open === true);
+    assert('correction shows list rows', doc.querySelectorAll('#correction-list .correction-row').length >= 2);
+
+    // Click − on pref 103 row
+    const corrRows = doc.querySelectorAll('#correction-list .correction-row');
+    let pref103Row = null;
+    for (const r of corrRows) {
+      if (r.querySelector('.correction-label').textContent.includes('103')) {
+        pref103Row = r;
+        break;
+      }
+    }
+    assert('correction row for pref 103 exists', !!pref103Row);
+    if (pref103Row) {
+      const minusBtn = pref103Row.querySelector('.correction-btn.minus');
+      minusBtn.click();
+      await new Promise(r => setTimeout(r, 100));
+      assert('party 3 count = 0 after correction', doc.querySelector('.party-card[data-party="3"] .party-count').textContent === '0');
+    }
+
+    // Close correction modal
+    doc.getElementById('correction-modal-close').click();
+    await new Promise(r => setTimeout(r, 100));
+    assert('correction modal closed', corrModal.open === false);
+
+    // Undo correction
+    doc.getElementById('btn-undo').click();
+    await new Promise(r => setTimeout(r, 100));
+    assert('undo restores corrected value', doc.querySelector('.party-card[data-party="3"] .party-count').textContent === '1');
+
+    // Test: localStorage persistence
+    const card7 = doc.querySelector('.party-card[data-party="7"]');
+    card7.click();
+    await new Promise(r => setTimeout(r, 150));
+    const noPref = doc.getElementById('btn-no-pref');
+    noPref.click();
+    await new Promise(r => setTimeout(r, 400)); // wait past save debounce
+
+    const stored = JSON.parse(win.localStorage.getItem('broene-izbori-v1'));
+    assert('localStorage saves state', stored !== null);
+    assert('stored party 7 total = 1', stored.counts['7'].total === 1);
+    assert('stored party 7 pref_0 = 1', stored.counts['7'].prefs['0'] === 1);
+
+    // Final report
+    const failCount = results.filter(r => r.includes('FAIL')).length;
+    const passCount = results.filter(r => r.includes('PASS')).length;
+    results.push('');
+    results.push(`=== ${passCount} passed, ${failCount} failed ===`);
+    render();
+    document.title = failCount === 0 ? 'PASS' : 'FAIL';
+  } catch (e) {
+    fail('exception thrown: ' + e.message);
+    console.error(e);
+    render();
+    document.title = 'FAIL';
+  }
+});
+
+render();
+</script>
+</body>
+</html>

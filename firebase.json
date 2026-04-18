@@ -1,0 +1,56 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      ".firebaserc",
+      ".github/**",
+      "**/.*",
+      "**/node_modules/**",
+      "README.md",
+      "_selftest.html"
+    ],
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "headers": [
+      {
+        "source": "/sw.js",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+          { "key": "Service-Worker-Allowed", "value": "/" }
+        ]
+      },
+      {
+        "source": "/manifest.webmanifest",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+          { "key": "Content-Type", "value": "application/manifest+json" }
+        ]
+      },
+      {
+        "source": "**/*.@(html|js|css)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=300, must-revalidate" }
+        ]
+      },
+      {
+        "source": "/icons/**",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=604800" }
+        ]
+      },
+      {
+        "source": "**/*.@(png|svg|ico|webp|jpg|jpeg)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=604800" }
+        ]
+      },
+      {
+        "source": "/",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=300, must-revalidate" }
+        ]
+      }
+    ]
+  }
+}

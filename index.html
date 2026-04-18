@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#1e40af">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Броене">
+  <meta name="description" content="Преброяване на гласове за избори за Народно събрание на България">
+  <title>Преброяване НС</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-left">
+      <h1 class="app-title">Преброяване НС</h1>
+      <div class="total-badge">
+        <span class="total-label">Общо:</span>
+        <span class="total-count" id="total-count" aria-live="polite">0</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button type="button" id="btn-undo" class="icon-btn" aria-label="Отмени последно действие" title="Отмени" disabled>
+        <span class="icon-glyph" aria-hidden="true">↶</span>
+      </button>
+      <button type="button" id="btn-export" class="icon-btn" aria-label="Експорт на резултатите" title="Експорт">
+        <span class="icon-glyph" aria-hidden="true">⤓</span>
+      </button>
+      <button type="button" id="btn-reset" class="icon-btn icon-btn-danger" aria-label="Нулирай всички броячи" title="Нулирай">
+        <span class="icon-glyph" aria-hidden="true">⟲</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <section class="parties-grid" id="parties-grid" aria-label="Партии"></section>
+  </main>
+
+  <footer class="app-footer">
+    <button type="button" id="btn-invalid" class="btn-invalid" aria-label="Недействителна бюлетина">
+      <span class="btn-invalid-label">
+        <span aria-hidden="true">✕</span>
+        Недействителна
+      </span>
+      <span class="btn-invalid-count" id="invalid-count" aria-live="polite">0</span>
+    </button>
+  </footer>
+
+  <!-- Preference modal -->
+  <dialog class="modal" id="pref-modal" aria-labelledby="pref-modal-title">
+    <header class="modal-header">
+      <div class="modal-title" id="pref-modal-title">
+        <span class="modal-party-number" id="modal-party-number"></span>
+        <span class="modal-party-name" id="modal-party-name"></span>
+      </div>
+      <button type="button" class="modal-close" id="modal-close" aria-label="Затвори">✕</button>
+    </header>
+    <div class="modal-body">
+      <button type="button" class="btn-no-pref" id="btn-no-pref">Без преференция</button>
+      <div class="prefs-label">или изберете кандидат:</div>
+      <div class="prefs-grid" id="prefs-grid"></div>
+    </div>
+  </dialog>
+
+  <!-- Reset confirmation modal -->
+  <dialog class="modal modal-confirm" id="reset-modal" aria-labelledby="reset-modal-title">
+    <header class="modal-header">
+      <div class="modal-title" id="reset-modal-title">Нулиране на всички броячи</div>
+    </header>
+    <div class="modal-body">
+      <p class="confirm-text">
+        Сигурни ли сте, че искате да изтриете <strong>всички броячи</strong>?
+        Това действие не може да бъде отменено.
+      </p>
+      <p class="confirm-hint">
+        Съвет: преди нулиране, експортирайте резултатите като backup.
+      </p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="btn-reset-cancel" autofocus>Откажи</button>
+        <button type="button" class="btn-danger" id="btn-reset-confirm">Изтрий всичко</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Correction modal (long-press) -->
+  <dialog class="modal" id="correction-modal" aria-labelledby="correction-modal-title">
+    <header class="modal-header">
+      <div class="modal-title" id="correction-modal-title">
+        <span class="modal-party-number" id="correction-modal-number"></span>
+        <span class="modal-party-name" id="correction-modal-name"></span>
+      </div>
+      <button type="button" class="modal-close" id="correction-modal-close" aria-label="Затвори">✕</button>
+    </header>
+    <div class="modal-body">
+      <div class="correction-hint">Коригирай броячите с −/+:</div>
+      <div class="correction-list" id="correction-list"></div>
+      <div class="correction-add-section" id="correction-add-section">
+        <div class="correction-add-label">Добави глас към кандидат:</div>
+        <div class="correction-add-grid" id="correction-add-grid"></div>
+      </div>
+      <div class="correction-total">
+        <span>Общо за партията:</span>
+        <strong id="correction-total">0</strong>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Export modal -->
+  <dialog class="modal modal-confirm" id="export-modal" aria-labelledby="export-modal-title">
+    <header class="modal-header">
+      <div class="modal-title" id="export-modal-title">Експорт на резултатите</div>
+      <button type="button" class="modal-close" id="export-modal-close" aria-label="Затвори">✕</button>
+    </header>
+    <div class="modal-body">
+      <p class="confirm-text">Изберете формат за сваляне:</p>
+      <div class="export-actions">
+        <button type="button" class="btn-export-option" id="btn-export-csv">
+          <span class="export-icon" aria-hidden="true">📊</span>
+          <span class="export-label">
+            <strong>CSV файл</strong>
+            <small>Таблица с резултати (Excel, LibreOffice)</small>
+          </span>
+        </button>
+        <button type="button" class="btn-export-option" id="btn-export-json">
+          <span class="export-icon" aria-hidden="true">💾</span>
+          <span class="export-label">
+            <strong>JSON backup</strong>
+            <small>Пълен backup за възстановяване</small>
+          </span>
+        </button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
